@@ -3,12 +3,16 @@ package cl.innovatech.authService.service;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.HashMap;
+import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import cl.innovatech.authService.DTOs.request.AuthLoginRequestDTO;
@@ -34,21 +38,25 @@ public class AuthService {
     private final AuthAuditLogRepository authAuditLogRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final RestTemplate restTemplate;
+
 
     @Value("${jwt.refresh-token-expiration-days}")
     private Long refreshTokenExpirationDays;
 
     public AuthService(UserRepository userRepository,
-                       RefreshTokenRepository refreshTokenRepository,
-                       AuthAuditLogRepository authAuditLogRepository,
-                       PasswordEncoder passwordEncoder,
-                       JwtService jwtService) {
-        this.userRepository = userRepository;
-        this.refreshTokenRepository = refreshTokenRepository;
-        this.authAuditLogRepository = authAuditLogRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.jwtService = jwtService;
-    }
+                   RefreshTokenRepository refreshTokenRepository,
+                   AuthAuditLogRepository authAuditLogRepository,
+                   PasswordEncoder passwordEncoder,
+                   JwtService jwtService,
+                   RestTemplate restTemplate) {
+    this.userRepository = userRepository;
+    this.refreshTokenRepository = refreshTokenRepository;
+    this.authAuditLogRepository = authAuditLogRepository;
+    this.passwordEncoder = passwordEncoder;
+    this.jwtService = jwtService;
+    this.restTemplate = restTemplate;  
+}
 
     public AuthResponseDTO register(AuthRegisterRequestDTO dto) {
         String userName = dto.getUserName().trim();
@@ -72,6 +80,24 @@ public class AuthService {
         user.setEnabled(true);
 
         User savedUser = userRepository.save(user);
+        try {
+        Map<String, Object> professional = new HashMap<>();
+        professional.put("firstName", savedUser.getFirstName());
+        professional.put("lastName",  savedUser.getLastName());
+        professional.put("email",     savedUser.getEmail());
+        professional.put("employeeCode", savedUser.getId());
+        professional.put("status",    "ACTIVE");
+        professional.put("weeklyCapacityHours", 40);
+        
+        restTemplate.postForObject(
+            "http://localhost:8083/api/professionals",
+            professional,
+            Object.class
+        );
+    } catch (Exception e) {
+        // Si falla no interrumpir el registro
+        System.out.println("Warning: no se pudo crear perfil en recursos: " + e.getMessage());
+    }
 
         String accessToken = jwtService.generateAccessToken(savedUser);
         RefreshToken refreshToken = createRefreshToken(savedUser.getId());
